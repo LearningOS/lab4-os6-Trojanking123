@@ -3,7 +3,8 @@
 use crate::mm::{translated_refmut, translated_ref, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,
+    suspend_current_and_run_next, TaskStatus,  get_task_info_inner, 
+    sys_mmap_inner, sys_munmap_inner, set_priority_inner 
 };
 use crate::fs::{open_file, OpenFlags};
 use crate::timer::get_time_us;
@@ -111,38 +112,64 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_get_time
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    let _us = get_time_us();
-    // unsafe {
-    //     *ts = TimeVal {
-    //         sec: us / 1_000_000,
-    //         usec: us % 1_000_000,
-    //     };
-    // }
+    let ptr = translated_refmut(current_user_token(), _ts);
+    
+    let us = get_time_us();
+    let ts = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+        
+    *ptr = ts;
     0
+    // -1
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
-pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    -1
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize { 
+    
+    
+    let ptr = translated_refmut(current_user_token(), ti) as *mut TaskInfo;
+    get_task_info_inner(ptr);    
+
+    0
+    
 }
 
 // YOUR JOB: 实现sys_set_priority，为任务添加优先级
 pub fn sys_set_priority(_prio: isize) -> isize {
-    -1
+    if _prio < 2 {
+        -1
+    }else {
+        return set_priority_inner(_prio);
+    }
+    
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    -1
-}
+    sys_mmap_inner(_start, _len, _port)
+    
+    
+}   
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    -1
+    sys_munmap_inner(_start, _len)
+    
 }
 
 //
 // YOUR JOB: 实现 sys_spawn 系统调用
 // ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
 pub fn sys_spawn(_path: *const u8) -> isize {
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, _path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let task = current_task().unwrap();
+        let new_task = task.spawn(all_data.as_slice());
+        new_task.pid.0 as isize
+    } else {
+        -1
+    }
 }

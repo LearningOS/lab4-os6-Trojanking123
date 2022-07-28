@@ -12,6 +12,8 @@ use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
+use crate::config::MAX_SYSCALL_NUM;
+use crate::timer::get_time_ms;
 
 /// Processor management structure
 pub struct Processor {
@@ -102,4 +104,48 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+
+pub fn get_current_task_status() -> TaskStatus {
+    TaskStatus::Running
+}
+
+pub fn get_current_task_costed_time() -> usize {
+    let task = current_task().unwrap();
+    let now = get_time_ms();
+    let first_time = task.inner_exclusive_access().first_time;
+    info!("task {:?} now time is {:?}", task.pid.0, now);
+    info!("task {:?} first time is {:?}", task.pid.0, first_time);
+
+    let costs = now - first_time ;
+    info!("task {:?} cost time {:?}",task.pid.0, costs);
+    costs
+
+}
+
+pub fn add_one_to_current_task(call_id: usize)  {
+    let task = current_task().unwrap();
+    
+    task.inner_exclusive_access().syscall_times[call_id] += 1;
+    //info!("add task {current} syscall {call_id} to {:?}", inner.tasks[current].syscall_times[call_id]);
+}
+
+pub fn get_current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let task = current_task().unwrap();
+    let st = task.inner_exclusive_access().syscall_times.clone();
+    st
+}
+
+pub fn mmap( start: usize, len: usize, port: usize) -> isize {
+    let  task = current_task().unwrap();
+    let ret = task.inner_exclusive_access().memory_set.mmap(start, len, port);
+    ret
+}
+
+pub fn munmap( start: usize, len: usize ) -> isize {
+    let task = current_task().unwrap();
+    let ret = task.inner_exclusive_access().memory_set.munmap(start, len);
+    ret
+    
 }

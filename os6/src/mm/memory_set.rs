@@ -75,6 +75,60 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        let rg = VPNRange::new(VirtAddr(start).floor(), VirtAddr(start+len).ceil() );
+        for vpn in rg {
+            if let Some(pte) = self.page_table.find_pte(vpn) {
+                let a = pte as *const PageTableEntry as usize;
+                if pte.is_valid() {
+                    info!("valid fault: {:?}", a);
+                    return -1;
+                }else {
+                    info!("invalid fault: {:?}", a);
+                }
+            }
+        }
+        let mut perm = MapPermission::U;
+        if port & 0x01 != 0 {
+            perm |= MapPermission::R;
+        }
+        if port & 0x02 != 0 {
+            perm |= MapPermission::W;
+        }
+        if port & 0x04 != 0 {
+            perm |= MapPermission::X;
+        }
+
+        self.insert_framed_area(VirtAddr(start), VirtAddr(start+len), perm);
+        0
+
+    }
+
+    
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        let rg = VPNRange::new(VirtAddr(start).floor(), VirtAddr(start+len).ceil() );
+        for vpn in rg {
+            if let Some(pte) = self.page_table.find_pte(vpn) {
+                if ! pte.is_valid(){
+                    return -1;
+                }
+            }else {
+                return -1;
+            }
+        }
+
+        for area in &mut self.areas {
+            for vpn in rg {
+                if vpn < area.vpn_range.get_end() && vpn >= area.vpn_range.get_start() {
+                    area.unmap_one(&mut self.page_table, vpn);
+                }
+            }
+        }
+        
+        0
+    }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {

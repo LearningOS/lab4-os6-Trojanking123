@@ -34,7 +34,11 @@ pub use manager::add_task;
 pub use pid::{pid_alloc, KernelStack, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+        add_one_to_current_task, get_current_task_costed_time, get_current_task_status, get_current_task_syscall_times,
+        mmap, munmap
 };
+
+use crate::timer::get_time_ms;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -103,4 +107,54 @@ lazy_static! {
 
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+
+pub fn add_one_while_syscall(id: usize) {
+    add_one_to_current_task(id);
+}
+
+
+pub fn get_task_info_inner(t: *mut TaskInfo) {
+    let a = get_current_task_status();
+    let b = get_current_task_syscall_times();
+    let c = get_current_task_costed_time();
+    // info!("get info okkkkkkkkkk");
+    // info!("a : {:?}", a);
+    // info!("b : {:?}", b.clone());
+    // info!("c : {:?}", c);
+    unsafe {
+        *t = TaskInfo {
+
+            status : a,
+            syscall_times: b,
+            time: c,
+        }
+    }
+
+} 
+
+pub fn sys_mmap_inner(start: usize, len: usize, port: usize) -> isize {
+    let va = VirtAddr(start);
+    if ! va.aligned() || port & !0x7 != 0  || port & 0x7 == 0 {
+        return -1;
+    }
+    mmap(start, len, port)
+}
+
+pub fn sys_munmap_inner(start: usize, len: usize ) -> isize {
+    let va = VirtAddr(start);
+    if ! va.aligned()  {
+        return -1;
+    }
+    munmap(start, len)
+}
+
+pub fn set_priority_inner(prio: isize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    info!("set task: {:?} prio from {:?} to {:?}", task.pid.0, inner.prio, prio);
+    inner.prio = prio;
+
+    prio
 }
