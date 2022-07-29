@@ -14,6 +14,7 @@ use alloc::string::String;
 use crate::mm::translated_refmut;
 use crate::config::MAX_SYSCALL_NUM;
 use core::cmp::Ordering;
+use crate::timer::get_time_ms;
 
 /// Task control block structure
 ///
@@ -190,6 +191,12 @@ impl TaskControlBlock {
         inner.memory_set = memory_set;
         // update trap_cx ppn
         inner.trap_cx_ppn = trap_cx_ppn;
+        inner.first_time = get_time_ms();
+        //inner.dispatched = false;
+        inner.syscall_times = [0; MAX_SYSCALL_NUM];
+        inner.pass = 0;
+        inner.prio = 16;
+        
         // initialize trap_cx
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
@@ -235,7 +242,7 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
-                    first_time: 0,
+                    first_time: get_time_ms(),
                     dispatched : false,
                     prio : 16,
                     syscall_times: [0; MAX_SYSCALL_NUM],
@@ -298,7 +305,7 @@ impl TaskControlBlock {
                     dispatched: parent_inner.dispatched,
                     syscall_times: parent_inner.syscall_times.clone(),
                     pass: parent_inner.pass,
-                    prio: parent_inner.pass
+                    prio: parent_inner.prio
 
                 })
             },
