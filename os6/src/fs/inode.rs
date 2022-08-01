@@ -10,6 +10,7 @@ use bitflags::*;
 use alloc::vec::Vec;
 use super::File;
 use crate::mm::UserBuffer;
+use super::{Stat, StatMode};
 
 /// A wrapper around a filesystem inode
 /// to implement File trait atop
@@ -137,6 +138,37 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
                 ))
             })
     }
+}
+
+pub fn link_file(oldpath: &str, newpath: &str) -> Option<Arc<OSInode>> {
+    let inode = ROOT_INODE.link(oldpath, newpath);
+    if inode.is_none() {
+        return None;
+    }else {
+        Some(Arc::new(OSInode::new(
+            true,
+            true,
+            inode.unwrap()
+        )))
+    }
+}
+
+pub fn unlink_file(name: &str) -> isize{
+    ROOT_INODE.unlink(name)
+    
+}
+
+pub fn fstat_file(name: &str) -> Stat {
+    let (a, b) = ROOT_INODE.fstat(name);
+    let s = Stat {
+        dev: 0,
+        ino: a,
+        mode: StatMode::FILE,
+        nlink: b,
+        pad: [0; 7]
+    };
+    s
+    
 }
 
 impl File for OSInode {

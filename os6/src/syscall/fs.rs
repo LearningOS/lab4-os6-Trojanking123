@@ -5,7 +5,7 @@ use crate::mm::translated_str;
 use crate::mm::translated_refmut;
 use crate::task::current_user_token;
 use crate::task::current_task;
-use crate::fs::open_file;
+use crate::fs::{open_file, link_file, unlink_file, fstat_file};
 use crate::fs::OpenFlags;
 use crate::fs::Stat;
 use crate::mm::UserBuffer;
@@ -81,13 +81,30 @@ pub fn sys_close(fd: usize) -> isize {
 
 // YOUR JOB: 扩展 easy-fs 和内核以实现以下三个 syscall
 pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-   -1
+    let token = current_user_token();
+    let name = translated_str(token, name);
+    fstat_file()
 }
 
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
-    -1
+pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
+    let token = current_user_token();
+    let oldpath = translated_str(token, old_name);
+    let newpath = translated_str(token, new_name);
+    if oldpath == newpath {
+        return -1;
+    }
+    
+    if   link_file(oldpath.as_str(), newpath.as_str()).is_none() {
+        -1
+    }else {
+        0
+    }
 }
 
-pub fn sys_unlinkat(_name: *const u8) -> isize {
-    -1
+pub fn sys_unlinkat(name: *const u8) -> isize {
+    let token = current_user_token();
+    let name = translated_str(token, name);
+    
+    
+    unlink_file(name.as_str())
 }

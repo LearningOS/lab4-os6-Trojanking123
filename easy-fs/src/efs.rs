@@ -161,4 +161,11 @@ impl EasyFileSystem {
             (block_id - self.data_area_start_block) as usize
         )
     }
+
+    pub fn dealloc_inode(&mut self, inode_id: u32) {
+        self.data_bitmap.dealloc(
+            &self.block_device,
+            (inode_id) as usize
+        )
+    }
 }

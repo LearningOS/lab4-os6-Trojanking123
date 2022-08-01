@@ -40,4 +40,4 @@ bitflags! {
 }    
 
 pub use stdio::{Stdin, Stdout};
-pub use inode::{OSInode, open_file, OpenFlags, list_apps};
+pub use inode::{OSInode, open_file, OpenFlags, list_apps, link_file, unlink_file, fstat_file};

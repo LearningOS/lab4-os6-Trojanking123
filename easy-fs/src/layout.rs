@@ -12,7 +12,7 @@ const EFS_MAGIC: u32 = 0x3b800001;
 /// The max number of direct inodes
 const INODE_DIRECT_COUNT: usize = 28;
 /// The max length of inode name
-const NAME_LENGTH_LIMIT: usize = 27;
+const NAME_LENGTH_LIMIT: usize = 26;
 /// The max number of indirect1 inodes
 const INODE_INDIRECT1_COUNT: usize = BLOCK_SZ / 4;
 /// The max number of indirect2 inodes
@@ -422,8 +422,10 @@ impl DiskInode {
 
 /// A directory entry
 #[repr(C)]
+#[derive(Clone)]
 pub struct DirEntry {
     name: [u8; NAME_LENGTH_LIMIT + 1],
+    flag: u8,
     inode_number: u32,
 }
 
@@ -435,6 +437,7 @@ impl DirEntry {
     pub fn empty() -> Self {
         Self {
             name: [0u8; NAME_LENGTH_LIMIT + 1],
+            flag: 0,
             inode_number: 0,
         }
     }
@@ -444,6 +447,7 @@ impl DirEntry {
         bytes[..name.len()].copy_from_slice(name.as_bytes());
         Self {
             name: bytes,
+            flag: 0,
             inode_number,
         }
     }
@@ -473,5 +477,13 @@ impl DirEntry {
     /// Get inode number of the entry
     pub fn inode_number(&self) -> u32 {
         self.inode_number
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.flag == 0
+    }
+
+    pub fn set_valid(&mut self, flag: u8) {
+        self.flag = flag;
     }
 }

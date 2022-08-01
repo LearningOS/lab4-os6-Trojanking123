@@ -1,3 +1,5 @@
+use alloc::collections::BTreeMap;
+
 use super::{
     BlockDevice,
     DiskInode,
@@ -8,10 +10,12 @@ use super::{
     get_block_cache,
     block_cache_sync_all,
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, borrow::ToOwned};
 use alloc::string::String;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
+
+
 
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
@@ -69,7 +73,7 @@ impl Inode {
                 ),
                 DIRENT_SZ,
             );
-            if dirent.name() == name {
+            if dirent.name() == name && dirent.is_valid() {
                 return Some(dirent.inode_number() as u32);
             }
         }
@@ -90,6 +94,175 @@ impl Inode {
                 ))
             })
         })
+    }
+
+
+    /// Find inode under current inode by name
+    pub fn link(&self, oldpath: &str, newpath: &str) -> Option<Arc<Inode>> {
+        let mut fs = self.fs.lock();
+        let old_inode_id = self.modify_disk_inode(|root_inode| {
+            // assert it is a directory
+            assert!(root_inode.is_dir());
+            // has the file been created?
+            self.find_inode_id(oldpath, root_inode)
+        });
+        if old_inode_id.is_none() {
+            return None ;
+        }
+
+ 
+        self.modify_disk_inode(|root_inode| {
+            // append file in the dirent
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            // increase size
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+            // write dirent
+            let dirent = DirEntry::new(newpath, old_inode_id.unwrap());
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+
+        let (block_id, block_offset) = fs.get_disk_inode_pos(old_inode_id.unwrap());
+        block_cache_sync_all();
+        // return inode
+        Some(Arc::new(Self::new(
+            block_id,
+            block_offset,
+            self.fs.clone(),
+            self.block_device.clone(),
+        )))
+    }
+
+    pub fn unlink(&self, pathname: &str) -> isize {
+        let mut fs = self.fs.lock();
+        let info = self.read_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut v = Vec::new();
+            for i in 0..file_count {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    disk_inode.read_at(
+                        i * DIRENT_SZ,
+                        dirent.as_bytes_mut(),
+                        &self.block_device,
+                    ),
+                    DIRENT_SZ,
+                );
+                if dirent.is_valid() {
+                    v.push(dirent);
+                }
+                
+            }
+            v
+        });
+
+        let mut tmp: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        let mut name_id_map: BTreeMap<String, u32> = BTreeMap::new();
+        let mut name_index_map: BTreeMap<String, u32> = BTreeMap::new();
+        for (index, dir) in info.iter().enumerate()  {
+                let dirname = dir.name().to_owned();
+                let inode = dir.inode_number();
+                name_id_map.insert(dirname.clone(), inode);
+                name_index_map.insert(dirname.clone(), index as u32);
+                if tmp.contains_key(&inode) {
+                    tmp.get_mut(&inode).unwrap().push(dirname);
+                }else {
+                    let mut v = Vec::new();
+                    v.push(dirname);
+                    tmp.insert(inode, v);
+                }
+                tmp.insert(dir.inode_number(), Vec::new());
+        }
+        
+        if let Some(inode_id) = name_id_map.get(&pathname.to_owned()) {
+    
+            if tmp[inode_id].len() == 1 {
+                let (block_id, block_offset) = fs.get_disk_inode_pos(*inode_id);
+                    block_cache_sync_all();
+                    // return inode
+                    let inode = Arc::new(Self::new(
+                        block_id,
+                        block_offset,
+                        self.fs.clone(),
+                        self.block_device.clone(),
+                    ));
+                    inode.clear();
+                    fs.dealloc_inode(*inode_id);
+            }
+
+            self.modify_disk_inode(|root_inode| {
+                
+                let index = *name_index_map.get(&pathname.to_owned()).unwrap() as usize ;
+                
+                // write dirent
+                let mut dirent = info[index].clone();
+                dirent.set_valid(1);
+                root_inode.write_at(
+                    index * DIRENT_SZ,
+                    dirent.as_bytes(),
+                    &self.block_device,
+                );
+            });
+            
+            return 0;
+        }else {
+            return -1;
+        }
+
+    }
+
+    pub fn fstat(&self, pathname: &str) -> (u64, u32)  {
+        
+        let info = self.read_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut v = Vec::new();
+            for i in 0..file_count {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    disk_inode.read_at(
+                        i * DIRENT_SZ,
+                        dirent.as_bytes_mut(),
+                        &self.block_device,
+                    ),
+                    DIRENT_SZ,
+                );
+                if dirent.is_valid() {
+                    v.push(dirent);
+                }
+                
+            }
+            v
+        });
+
+        let mut tmp: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        let mut name_id_map: BTreeMap<String, u32> = BTreeMap::new();
+        let mut name_index_map: BTreeMap<String, u32> = BTreeMap::new();
+        for (index, dir) in info.iter().enumerate()  {
+                let dirname = dir.name().to_owned();
+                let inode = dir.inode_number();
+                name_id_map.insert(dirname.clone(), inode);
+                name_index_map.insert(dirname.clone(), index as u32);
+                if tmp.contains_key(&inode) {
+                    tmp.get_mut(&inode).unwrap().push(dirname);
+                }else {
+                    let mut v = Vec::new();
+                    v.push(dirname);
+                    tmp.insert(inode, v);
+                }
+                tmp.insert(dir.inode_number(), Vec::new());
+        }
+
+        for dir in info {
+            if dir.name().to_owned() == pathname.to_owned() {
+                let nlink = tmp[&dir.inode_number()].len();
+                return (dir.inode_number() as u64, nlink as u32);
+            }
+        }
+        (0, 0)
     }
     /// Increase the size of a disk inode
     fn increase_size(
@@ -173,7 +346,10 @@ impl Inode {
                     ),
                     DIRENT_SZ,
                 );
-                v.push(String::from(dirent.name()));
+                if dirent.is_valid() {
+                    v.push(String::from(dirent.name()));
+                }
+                
             }
             v
         })

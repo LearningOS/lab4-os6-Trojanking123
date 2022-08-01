@@ -208,6 +208,7 @@ impl MemorySet {
             None,
         );
         info!("mapping memory-mapped registers");
+        
         for pair in MMIO {
             memory_set.push(
                 MapArea::new(
