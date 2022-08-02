@@ -152,9 +152,9 @@ impl Inode {
                     ),
                     DIRENT_SZ,
                 );
-                if dirent.is_valid() {
-                    v.push(dirent);
-                }
+                
+                v.push(dirent);
+                
                 
             }
             v
@@ -197,17 +197,18 @@ impl Inode {
             self.modify_disk_inode(|root_inode| {
                 
                 let index = *name_index_map.get(&pathname.to_owned()).unwrap() as usize ;
-                
+                log::info!("unlink modify index {:?}", index);
                 // write dirent
                 let mut dirent = info[index].clone();
                 dirent.set_valid(1);
+                log::info!("unlink cover dirrent {:?}", dirent.name().clone());
                 root_inode.write_at(
                     index * DIRENT_SZ,
                     dirent.as_bytes(),
                     &self.block_device,
                 );
             });
-            
+            block_cache_sync_all();
             return 0;
         }else {
             return -1;
@@ -215,55 +216,49 @@ impl Inode {
 
     }
 
-    pub fn fstat(&self, pathname: &str) -> (u64, u32)  {
+    pub fn fstat(&self) -> (u64, u32)  {
         
-        let info = self.read_disk_inode(|disk_inode| {
+        let efs = self.fs.clone();
+        let root_inode = Arc::new(EasyFileSystem::root_inode(&efs));
+
+        let info = root_inode.read_disk_inode(|disk_inode| {
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;
-            let mut v = Vec::new();
+            let mut v: BTreeMap<u32, u32> = BTreeMap::new();
             for i in 0..file_count {
                 let mut dirent = DirEntry::empty();
                 assert_eq!(
                     disk_inode.read_at(
                         i * DIRENT_SZ,
                         dirent.as_bytes_mut(),
-                        &self.block_device,
+                        &root_inode.block_device,
                     ),
                     DIRENT_SZ,
                 );
                 if dirent.is_valid() {
-                    v.push(dirent);
+                    log::info!("fstat got file index: {:?} name: {:?} inodeid {:?}",i, dirent.name().clone(), dirent.inode_number());
+                    if let Some(v) =  v.get_mut(&dirent.inode_number()) {
+                        *v += 1;
+                    }else {
+                        v.insert(dirent.inode_number(), 1);
+                    }
                 }
                 
             }
             v
         });
-
-        let mut tmp: BTreeMap<u32, Vec<String>> = BTreeMap::new();
-        let mut name_id_map: BTreeMap<String, u32> = BTreeMap::new();
-        let mut name_index_map: BTreeMap<String, u32> = BTreeMap::new();
-        for (index, dir) in info.iter().enumerate()  {
-                let dirname = dir.name().to_owned();
-                let inode = dir.inode_number();
-                name_id_map.insert(dirname.clone(), inode);
-                name_index_map.insert(dirname.clone(), index as u32);
-                if tmp.contains_key(&inode) {
-                    tmp.get_mut(&inode).unwrap().push(dirname);
-                }else {
-                    let mut v = Vec::new();
-                    v.push(dirname);
-                    tmp.insert(inode, v);
-                }
-                tmp.insert(dir.inode_number(), Vec::new());
-        }
-
-        for dir in info {
-            if dir.name().to_owned() == pathname.to_owned() {
-                let nlink = tmp[&dir.inode_number()].len();
-                return (dir.inode_number() as u64, nlink as u32);
+        let fs = self.fs.lock();
+        for (k, v) in info {
+            let (a, b) = fs.get_disk_inode_pos(k);
+            if a as usize == self.block_id && b == self.block_offset {
+                return (k as u64, v);
             }
+            
         }
-        (0, 0)
+
+    (0, 0)
     }
+
+    
     /// Increase the size of a disk inode
     fn increase_size(
         &self,

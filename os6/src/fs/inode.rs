@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use super::File;
 use crate::mm::UserBuffer;
 use super::{Stat, StatMode};
+use core::any::Any;
 
 /// A wrapper around a filesystem inode
 /// to implement File trait atop
@@ -159,7 +160,7 @@ pub fn unlink_file(name: &str) -> isize{
 }
 
 pub fn fstat_file(name: &str) -> Stat {
-    let (a, b) = ROOT_INODE.fstat(name);
+    let (a, b) = ROOT_INODE.fstat();
     let s = Stat {
         dev: 0,
         ino: a,
@@ -197,5 +198,25 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+
+    fn fstat(&self) -> Option<Stat> {
+        let inner = self.inner.exclusive_access();
+        let (a, b) = inner.inode.fstat();
+        if a == 0 && b == 0 {
+            return None;
+        }
+        let s = Stat {
+            dev: 0,
+            ino: a,
+            mode: StatMode::FILE,
+            nlink: b,
+            pad: [0; 7]
+        };
+        Some(s)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

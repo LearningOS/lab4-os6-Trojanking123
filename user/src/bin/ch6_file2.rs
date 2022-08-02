@@ -34,7 +34,14 @@ pub fn main() -> i32 {
     assert_eq!(stat2.dev, stat.dev);
     assert_eq!(stat2.ino, stat.ino);
     assert_eq!(stat2.nlink, 3);
+    
     unlink(lname1);
+
+    let mut stat3 = Stat::new();
+    fstat(fd, &stat3);
+    assert_eq!(stat3.nlink, 2);
+    assert_eq!(stat3.ino, stat2.ino);
+
     unlink(lname2);
     fstat(fd, &stat2);
     assert_eq!(stat2.nlink, 1);

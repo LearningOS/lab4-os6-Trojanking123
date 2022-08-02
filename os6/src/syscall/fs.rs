@@ -1,5 +1,7 @@
 //! File and filesystem-related syscalls
 
+use crate::fs::File;
+use crate::fs::OSInode;
 use crate::mm::translated_byte_buffer;
 use crate::mm::translated_str;
 use crate::mm::translated_refmut;
@@ -10,6 +12,7 @@ use crate::fs::OpenFlags;
 use crate::fs::Stat;
 use crate::mm::UserBuffer;
 use alloc::sync::Arc;
+use core::any::Any;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
@@ -80,10 +83,32 @@ pub fn sys_close(fd: usize) -> isize {
 }
 
 // YOUR JOB: 扩展 easy-fs 和内核以实现以下三个 syscall
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-    let token = current_user_token();
-    let name = translated_str(token, name);
-    fstat_file()
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let task = current_task().unwrap();
+
+    let ptr = translated_refmut(current_user_token(), st);
+    let inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }
+    let f = inner.fd_table[fd].clone().unwrap();
+    
+    let inode = match f.as_any().downcast_ref::<OSInode>() {
+        Some(b) => b ,
+        None => return -1,
+    };
+
+    let st = inode.fstat();
+    if st.is_none() {
+        return -1;
+    }else {
+        *ptr = st.unwrap();
+    }
+    0
+    
 }
 
 pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
