@@ -178,6 +178,7 @@ impl Inode {
                 tmp.insert(dir.inode_number(), Vec::new());
         }
         
+        
         if let Some(inode_id) = name_id_map.get(&pathname.to_owned()) {
     
             if tmp[inode_id].len() == 1 {
