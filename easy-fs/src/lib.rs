@@ -1,6 +1,9 @@
 #![no_std]
 
 extern crate alloc;
+extern crate log;
+
+pub use log::*;
 
 mod block_dev;
 mod layout;
